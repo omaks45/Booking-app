@@ -11,7 +11,8 @@ import {
     HttpStatus,
     ParseUUIDPipe,
     ValidationPipe,
-    UsePipes
+    UsePipes,
+    BadRequestException
 } from '@nestjs/common';
 import { 
     ApiTags, 
@@ -26,6 +27,7 @@ import {
 } from '@nestjs/swagger';
 import { BookingService, BookingResult, CancelBookingResult, RescheduleBookingResult } from './booking.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
+import { isValidObjectId, Types } from 'mongoose';
 
 // Response DTOs for Swagger documentation
 class BookingStatsResponseDto {
@@ -110,6 +112,7 @@ export class BookingController {
         return await this.bookingService.createBooking(createBookingDto);
     }
 
+    // FIXED: More specific route for user bookings to avoid conflicts
     @Get('user/:userId')
     @ApiOperation({ 
         summary: 'Get user bookings',
@@ -162,15 +165,21 @@ export class BookingController {
     })
     @ApiBadRequestResponse({ description: 'Invalid user ID or date format' })
     async getUserBookings(
-        @Param('userId', ParseUUIDPipe) userId: string,
-        @Query('includeHistory') includeHistory?: string,
-        @Query('startDate') startDate?: string,
-        @Query('endDate') endDate?: string
+    @Param('userId') userId: string,
+    @Query('includeHistory') includeHistory?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string
     ): Promise<Partial<BookingResult>[]> {
+    // Use mongoose Types.ObjectId.isValid() instead
+        if (!Types.ObjectId.isValid(userId)) {
+            throw new BadRequestException('Invalid user ID format. Must be a valid MongoDB ObjectId.');
+        }
+
         const includeHistoryBool = includeHistory === 'true';
         return await this.bookingService.getUserBookings(userId, includeHistoryBool, startDate, endDate);
     }
 
+    // FIXED: Added ObjectId validation for booking ID
     @Get(':bookingId')
     @ApiOperation({ 
         summary: 'Get booking by ID',
@@ -178,7 +187,7 @@ export class BookingController {
     })
     @ApiParam({ 
         name: 'bookingId', 
-        description: 'Unique identifier of the booking',
+        description: 'Unique identifier of the booking (must be a valid MongoDB ObjectId)',
         type: 'string'
     })
     @ApiQuery({ 
@@ -192,11 +201,21 @@ export class BookingController {
         description: 'Booking details retrieved successfully'
     })
     @ApiNotFoundResponse({ description: 'Booking not found' })
-    @ApiBadRequestResponse({ description: 'Unauthorized to view this booking' })
+    @ApiBadRequestResponse({ description: 'Invalid booking ID format or unauthorized to view this booking' })
     async getBookingById(
         @Param('bookingId') bookingId: string,
         @Query('userId') userId?: string
     ): Promise<BookingResult> {
+        // Validate bookingId format
+        if (!isValidObjectId(bookingId)) {
+            throw new BadRequestException('Invalid booking ID format. Must be a valid MongoDB ObjectId.');
+        }
+
+        // Validate userId if provided
+        if (userId && !isValidObjectId(userId)) {
+            throw new BadRequestException('Invalid user ID format');
+        }
+
         return await this.bookingService.getBookingById(bookingId, userId);
     }
 
@@ -249,6 +268,16 @@ export class BookingController {
         @Body() cancelRequest: CancelRequestDto = {},
         @Query('userId') userId?: string
     ): Promise<CancelBookingResult> {
+        // Validate bookingId format
+        if (!isValidObjectId(bookingId)) {
+            throw new BadRequestException('Invalid booking ID format');
+        }
+
+        // Validate userId if provided
+        if (userId && !isValidObjectId(userId)) {
+            throw new BadRequestException('Invalid user ID format');
+        }
+
         return await this.bookingService.cancelBooking(bookingId, userId, cancelRequest.reason);
     }
 
@@ -294,6 +323,16 @@ export class BookingController {
         @Body() rescheduleRequest: RescheduleRequestDto,
         @Query('userId') userId?: string
     ): Promise<RescheduleBookingResult> {
+        // Validate bookingId format
+        if (!isValidObjectId(bookingId)) {
+            throw new BadRequestException('Invalid booking ID format');
+        }
+
+        // Validate userId if provided
+        if (userId && !isValidObjectId(userId)) {
+            throw new BadRequestException('Invalid user ID format');
+        }
+
         return await this.bookingService.rescheduleBooking(
         bookingId,
         rescheduleRequest.newDate,
@@ -303,6 +342,7 @@ export class BookingController {
         );
     }
 
+    // FIXED: More specific route for stats to avoid conflicts
     @Get('stats/analytics')
     @ApiOperation({ 
         summary: 'Get booking statistics',
@@ -339,9 +379,15 @@ export class BookingController {
         @Query('endDate') endDate: string,
         @Query('userId') userId?: string
     ): Promise<BookingStatsResponseDto> {
+        // Validate userId if provided
+        if (userId && !isValidObjectId(userId)) {
+            throw new BadRequestException('Invalid user ID format');
+        }
+
         return await this.bookingService.getBookingStats(startDate, endDate, userId);
     }
 
+    // FIXED: More specific route for cleanup to avoid conflicts
     @Delete('cleanup/old')
     @ApiOperation({ 
         summary: 'Clean up old cancelled bookings',
