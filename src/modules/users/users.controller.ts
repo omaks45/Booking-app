@@ -25,7 +25,7 @@ import { UserResponseDto, UserListResponseDto } from './dto/user-response.dto';
 import { QueryUserDto } from './dto/query-user.dto';
 
 @ApiTags('Users')
-@Controller('users')
+@Controller({ path: 'users', version: '1' })
 export class UserController {
   constructor(private readonly userService: UserService) {}
 

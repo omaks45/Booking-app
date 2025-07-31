@@ -2,7 +2,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
-import { ValidationPipe, VersioningType } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
 import { SwaggerConfig } from './config/swagger.config';
 import helmet from 'helmet';
 import * as compression from 'compression';
@@ -18,8 +18,8 @@ async function bootstrap() {
   // Get configuration values
   const port = configService.get<number>('app.port') || 5000;
   const environment = configService.get<string>('app.environment') || 'development';
-  const apiPrefix = configService.get<string>('app.apiPrefix') || 'api/v1';
-  const corsOrigins = configService.get<string[]>('app.corsOrigins') || ['http://localhost:3000'];
+  const apiPrefix = configService.get<string>('app.apiPrefix') || 'api';
+  const corsOrigins = configService.get<string[]>('app.corsOrigins') || ['http://localhost:5000'];
 
   // Security middleware
   app.use(helmet({
@@ -80,15 +80,31 @@ async function bootstrap() {
   );
 
   // API versioning
-  app.enableVersioning({
-    type: VersioningType.URI,
-    defaultVersion: '1',
-  });
+  //app.enableVersioning({
+    //type: VersioningType.URI,
+    //defaultVersion: '1',
+  //});
 
   // Set global API prefix
   app.setGlobalPrefix(apiPrefix, {
     exclude: ['/health', '/'], // Exclude health check and root from prefix
   });
+
+  // DEBUG: Log configuration
+  console.log('\n=== DEBUGGING CONFIGURATION ===');
+  console.log(`API Prefix: ${apiPrefix}`);
+  console.log(`Environment: ${environment}`);
+  console.log(`Port: ${port}`);
+  console.log(`CORS Origins: ${JSON.stringify(corsOrigins)}`);
+  
+  // Debug config service values
+  console.log('\nConfig Service Values:');
+  console.log('app.port:', configService.get('app.port'));
+  console.log('app.environment:', configService.get('app.environment'));
+  console.log('app.apiPrefix:', configService.get('app.apiPrefix'));
+  console.log('app.corsOrigins:', configService.get('app.corsOrigins'));
+  
+  console.log('\n=== END DEBUGGING ===\n');
 
   // Setup Swagger documentation
   // Enable Swagger in both development and production
@@ -116,12 +132,12 @@ async function bootstrap() {
   // Start server
   await app.listen(port, '0.0.0.0');
   
-  console.log(`Application running on: http://localhost:${port}`);
-  //console.log(`Environment: ${environment}`);
-  //console.log(`API endpoints: http://localhost:${port}/${apiPrefix}`);
+  //console.log(`Application running on: http://localhost:${port}`);
+  //console.log(`API endpoints should be available at: http://localhost:${port}/${apiPrefix}`);
+  //console.log(`Test endpoint: http://localhost:${port}/${apiPrefix}/time-slots/available?date=2025-07-31`);
   
   if (environment === 'development') {
-    //console.log(`Health check: http://localhost:${port}/health`);
+    console.log(`Health check: http://localhost:${port}/health`);
   }
 }
 

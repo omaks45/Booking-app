@@ -54,7 +54,7 @@ class CleanupResponseDto {
 }
 
 @ApiTags('Time Slots')
-@Controller('time-slots')
+@Controller({ path: 'time-slot', version: '1' })
 @UsePipes(new ValidationPipe({ transform: true }))
 export class TimeSlotController {
   constructor(private readonly timeSlotService: TimeSlotService) {}

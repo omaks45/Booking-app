@@ -51,7 +51,7 @@ class CancelRequestDto {
 }
 
 @ApiTags('Bookings')
-@Controller('bookings')
+@Controller({ path: 'bookings', version: '1' })
 @UsePipes(new ValidationPipe({ transform: true }))
 export class BookingController {
     constructor(private readonly bookingService: BookingService) {}
