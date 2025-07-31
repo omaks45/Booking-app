@@ -537,26 +537,24 @@ export class TimeSlotService {
   }
 
   /**
-   * Check slot availability without creating slots
-   * Time Complexity: O(1)
+   * Check slot availability using the same logic as getAvailableSlots
+   * Time Complexity: O(n) where n is slots for the day, but cached after first call
    */
   async isSlotAvailable(date: string, time: string): Promise<boolean> {
     try {
-      // Validate business rules first
-      const validation = DateUtil.validateBookingDateTime(date, time, {
-        advanceHours: this.advanceHours,
-        startTime: this.workingHours.start,
-        endTime: this.workingHours.end,
-        allowWeekends: this.allowWeekends,
+      // Use the existing getAvailableSlots method to ensure consistency
+      const availableSlots = await this.getAvailableSlots({ 
+        date, 
+        includeWeekends: this.allowWeekends,
+        duration: this.slotDuration 
       });
-
-      if (!validation.isValid) {
-        return false;
-      }
-
-      const slot = await this.findAvailableSlot(date, time);
-      return slot !== null;
-    } catch {
+      
+      // Check if the requested time is available
+      return availableSlots.some(slot => slot.startTime === time);
+      
+    } catch (error) {
+      // If getAvailableSlots throws (e.g., invalid date), slot is not available
+      console.error('Error checking slot availability:', error);
       return false;
     }
   }

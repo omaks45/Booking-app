@@ -1,8 +1,7 @@
 /* eslint-disable prettier/prettier */
-
-import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, IsDateString, IsOptional, IsMongoId } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { ApiProperty } from "@nestjs/swagger";
+import { Transform } from "class-transformer";
+import { IsDateString, IsMongoId, IsNotEmpty, IsOptional, IsString } from "class-validator";
 
 export class CreateBookingDto {
     @ApiProperty({ description: 'User ID' })
@@ -10,47 +9,24 @@ export class CreateBookingDto {
     @IsMongoId()
     userId: string;
 
-    @ApiProperty({ description: 'Selected date', example: '2024-08-01' })
+    @ApiProperty({ description: 'Selected date', example: '2025-07-31' })
     @IsNotEmpty()
     @IsDateString()
+    @Transform(({ value }) => {
+        // Normalize date format
+        const date = new Date(value);
+        return date.toISOString().split('T')[0]; // Returns YYYY-MM-DD
+    })
     date: string;
 
-    @ApiProperty({ description: 'Selected time', example: '14:30' })
+    @ApiProperty({ description: 'Selected time', example: '15:00' })
     @IsNotEmpty()
     @IsString()
+    @Transform(({ value }) => value?.trim())
     time: string;
 
     @ApiProperty({ description: 'Additional notes', required: false })
     @IsOptional()
     @IsString()
     notes?: string;
-}
-
-export class CreateUserDto {
-    @ApiProperty({ description: 'Full name' })
-    @IsNotEmpty()
-    @IsString()
-    @Transform(({ value }) => value?.trim())
-    name: string;
-
-    @ApiProperty({ description: 'Email address' })
-    @IsNotEmpty()
-    @IsString()
-    email: string;
-
-    @ApiProperty({ description: 'Company name' })
-    @IsNotEmpty()
-    @IsString()
-    @Transform(({ value }) => value?.trim())
-    companyName: string;
-
-    @ApiProperty({ description: 'Phone number' })
-    @IsNotEmpty()
-    @IsString()
-    phoneNumber: string;
-
-    @ApiProperty({ description: 'Project summary' })
-    @IsNotEmpty()
-    @IsString()
-    projectSummary: string;
 }
