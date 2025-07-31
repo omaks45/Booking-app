@@ -1,9 +1,17 @@
+/* eslint-disable prettier/prettier */
+
 import { Module } from '@nestjs/common';
-import { UsersService } from './users.service';
-import { UsersController } from './users.controller';
+import { MongooseModule } from '@nestjs/mongoose';
+import { UserController } from '../users/users.controller';
+import { UserService } from '../users/users.service';
+import { User, UserSchema } from './schemas/user.schema';
 
 @Module({
-  controllers: [UsersController],
-  providers: [UsersService],
+  imports: [
+    MongooseModule.forFeature([{ name: User.name, schema: UserSchema }])
+  ],
+  controllers: [UserController],
+  providers: [UserService],
+  exports: [UserService], // Export for use in other modules
 })
-export class UsersModule {}
+export class UserModule {}

@@ -343,6 +343,265 @@ export class TimeSlotService {
   }
 
   /**
+   * Free a booked slot (used for cancellations)
+   * Time Complexity: O(1)
+   */
+  async freeSlot(slotId: string, userId?: string): Promise<TimeSlot> {
+    const filter: any = { _id: slotId, status: SlotStatus.BOOKED };
+    
+    // If userId provided, ensure only the user who booked can free the slot
+    if (userId) {
+      filter.bookedBy = userId;
+    }
+
+    const slot = await this.timeSlotModel.findOneAndUpdate(
+      filter,
+      { 
+        $set: { 
+          status: SlotStatus.AVAILABLE,
+          freedAt: new Date()
+        },
+        $unset: { 
+          bookedBy: 1, 
+          bookedAt: 1, 
+          metadata: 1 
+        }
+      },
+      { new: true }
+    );
+
+    if (!slot) {
+      // Check if slot exists but is not booked
+      const existingSlot = await this.timeSlotModel.findById(slotId);
+      if (!existingSlot) {
+        throw new NotFoundException('Time slot not found');
+      }
+      
+      if (existingSlot.status === SlotStatus.AVAILABLE) {
+        return existingSlot; // Already available, no action needed
+      }
+      
+      throw new ConflictException('Slot is not booked or you do not have permission to free it');
+    }
+
+    return slot;
+  }
+
+  /**
+   * Bulk free multiple slots (for batch cancellations)
+   * Time Complexity: O(n) where n is number of slots
+   */
+  async freeMultipleSlots(slotIds: string[], userId?: string): Promise<{
+    freedSlots: string[];
+    errors: Array<{ slotId: string; error: string }>;
+  }> {
+    const freedSlots: string[] = [];
+    const errors: Array<{ slotId: string; error: string }> = [];
+
+    // Process slots in parallel for better performance
+    const results = await Promise.allSettled(
+      slotIds.map(async (slotId) => {
+        try {
+          await this.freeSlot(slotId, userId);
+          return { success: true, slotId };
+        } catch (error) {
+          return { success: false, slotId, error: error.message };
+        }
+      })
+    );
+
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        if (result.value.success) {
+          freedSlots.push(result.value.slotId);
+        } else {
+          errors.push({
+            slotId: result.value.slotId,
+            error: result.value.error
+          });
+        }
+      } else {
+        errors.push({
+          slotId: slotIds[index],
+          error: result.reason?.message || 'Unknown error'
+        });
+      }
+    });
+
+    return { freedSlots, errors };
+  }
+
+  /**
+   * Get slot by ID with detailed information
+   * Time Complexity: O(1)
+   */
+  async getSlotById(slotId: string): Promise<TimeSlot & {
+    timeUntilSlot?: string;
+    canCancel?: boolean;
+    isBookable?: boolean;
+  }> {
+    const slot = await this.timeSlotModel.findById(slotId);
+    
+    if (!slot) {
+      throw new NotFoundException('Time slot not found');
+    }
+
+    const slotDateTime = DateUtil.parseDateTime(
+      DateUtil.formatDate(slot.date),
+      slot.startTime
+    );
+
+    const timeUntilSlot = DateUtil.getTimeUntilBooking(slotDateTime);
+    const canCancel = slot.status === SlotStatus.BOOKED && 
+                    DateUtil.meetsAdvanceNotice(slotDateTime, 1);
+    const isBookable = slot.status === SlotStatus.AVAILABLE && 
+                      DateUtil.meetsAdvanceNotice(slotDateTime, this.advanceHours);
+
+    (slot as any).timeUntilSlot = timeUntilSlot;
+    (slot as any).canCancel = canCancel;
+    (slot as any).isBookable = isBookable;
+    return slot;
+  }
+
+  /**
+   * Find available slot by date and time
+   * Time Complexity: O(1) - direct query with index
+   */
+  async findAvailableSlot(date: string, time: string): Promise<TimeSlot | null> {
+    // Validate the date and time first
+    const validation = DateUtil.validateBookingDateTime(date, time, {
+      advanceHours: this.advanceHours,
+      startTime: this.workingHours.start,
+      endTime: this.workingHours.end,
+      allowWeekends: this.allowWeekends,
+    });
+
+    if (!validation.isValid) {
+      throw new BadRequestException(validation.errors.join(', '));
+    }
+
+    const startOfDay = new Date(date + 'T00:00:00.000Z');
+    const endOfDay = new Date(date + 'T23:59:59.999Z');
+
+    return await this.timeSlotModel.findOne({
+      date: { $gte: startOfDay, $lte: endOfDay },
+      startTime: time,
+      status: SlotStatus.AVAILABLE
+    });
+  }
+
+  /**
+   * Book slot with integrated validation (optimized for booking service)
+   * Time Complexity: O(1)
+   */
+  async bookSlotForBooking(
+    date: string, 
+    time: string, 
+    userId: string,
+    metadata?: Record<string, any>
+  ): Promise<SlotBookingResult> {
+    // Find the specific slot first
+    const slot = await this.findAvailableSlot(date, time);
+    
+    if (!slot) {
+      throw new BadRequestException('Selected time slot is not available');
+    }
+
+    // Use the existing bookSlot method
+    return await this.bookSlot(slot._id.toString(), userId, metadata);
+  }
+
+  /**
+   * Get user's booked slots
+   * Time Complexity: O(log n + k) where k is number of user's bookings
+   */
+  async getUserBookedSlots(
+    userId: string,
+    startDate?: string,
+    endDate?: string
+  ): Promise<TimeSlot[]> {
+    const filter: any = { 
+      bookedBy: userId, 
+      status: SlotStatus.BOOKED 
+    };
+
+    if (startDate || endDate) {
+      filter.date = {};
+      if (startDate) filter.date.$gte = new Date(startDate);
+      if (endDate) filter.date.$lte = new Date(endDate);
+    }
+
+    return await this.timeSlotModel
+      .find(filter)
+      .sort({ date: 1, startTime: 1 });
+  }
+
+  /**
+   * Check slot availability without creating slots
+   * Time Complexity: O(1)
+   */
+  async isSlotAvailable(date: string, time: string): Promise<boolean> {
+    try {
+      // Validate business rules first
+      const validation = DateUtil.validateBookingDateTime(date, time, {
+        advanceHours: this.advanceHours,
+        startTime: this.workingHours.start,
+        endTime: this.workingHours.end,
+        allowWeekends: this.allowWeekends,
+      });
+
+      if (!validation.isValid) {
+        return false;
+      }
+
+      const slot = await this.findAvailableSlot(date, time);
+      return slot !== null;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Reschedule a booked slot to a new time
+   * Time Complexity: O(1) - two atomic operations
+   */
+  async rescheduleSlot(
+    currentSlotId: string,
+    newDate: string,
+    newTime: string,
+    userId?: string
+  ): Promise<{
+    oldSlot: TimeSlot;
+    newSlot: TimeSlot;
+    timeUntilNewBooking: string;
+  }> {
+    // Validate new slot availability
+    const newSlot = await this.findAvailableSlot(newDate, newTime);
+    if (!newSlot) {
+      throw new BadRequestException('New time slot is not available');
+    }
+
+    // Get current slot info before freeing
+    const currentSlot = await this.getSlotById(currentSlotId);
+    
+    if (userId && (currentSlot as any).bookedBy !== userId) {
+      throw new BadRequestException('You can only reschedule your own bookings');
+    }
+
+    // Free the current slot and book the new one atomically
+    const [freedSlot, bookedResult] = await Promise.all([
+      this.freeSlot(currentSlotId, userId),
+      this.bookSlot(newSlot._id.toString(), userId, (currentSlot as any).metadata)
+    ]);
+
+    return {
+      oldSlot: freedSlot,
+      newSlot: bookedResult.slot,
+      timeUntilNewBooking: bookedResult.timeUntilBooking
+    };
+  }
+
+  /**
    * Clean up old slots (maintenance operation)
    * Should be run as a scheduled job
    */

@@ -18,6 +18,7 @@ export class SwaggerConfig {
             - **Real-time Availability**: Dynamic time slot generation and availability checking
             - **User Management**: Complete user profile and booking history
             - **Flexible Scheduling**: Configurable working hours and slot durations
+            
         `)
         .setVersion('1.0')
         .addTag('Users', 'User management and profile operations')
@@ -25,6 +26,7 @@ export class SwaggerConfig {
         .addTag('Bookings', 'Booking management and scheduling')
         .addTag('Health', 'API health check endpoints')
         .addServer('http://localhost:3000', 'Development server')
+        .addServer('http://localhost:5000', 'Development server (alt port)')
         .addServer('https://api.yourdomain.com', 'Production server')
         .addBearerAuth(
             {
@@ -33,7 +35,7 @@ export class SwaggerConfig {
             bearerFormat: 'JWT',
             description: 'Enter JWT token for authentication',
             },
-            'JWT-auth', // This name will be used to reference this security scheme
+            'JWT-auth',
         )
         .addApiKey(
             {
@@ -61,14 +63,7 @@ export class SwaggerConfig {
         deepScanRoutes: true,
         });
 
-        // Customize the document with additional metadata
-        document.info.contact = {
-        name: 'Booking System API',
-        url: 'https://yourdomain.com',
-        email: 'api@yourdomain.com',
-        };
-
-        // Add global responses
+        // Add global responses for better documentation
         document.components.responses = {
         BadRequest: {
             description: 'Bad Request - Invalid input parameters',
@@ -123,6 +118,21 @@ export class SwaggerConfig {
             }
             }
         },
+        TooManyRequests: {
+            description: 'Rate limit exceeded',
+            content: {
+            'application/json': {
+                schema: {
+                type: 'object',
+                properties: {
+                    statusCode: { type: 'number', example: 429 },
+                    message: { type: 'string', example: 'Too many requests' },
+                    error: { type: 'string', example: 'Too Many Requests' }
+                }
+                }
+            }
+            }
+        },
         InternalServerError: {
             description: 'Internal Server Error',
             content: {
@@ -140,9 +150,12 @@ export class SwaggerConfig {
         }
         };
 
+        // Determine environment-specific settings
+        const isProduction = process.env.NODE_ENV === 'production';
+        
         SwaggerModule.setup('api/docs', app, document, {
         swaggerOptions: {
-            persistAuthorization: true,
+            persistAuthorization: !isProduction, // Don't persist auth in production
             displayRequestDuration: true,
             docExpansion: 'none',
             filter: true,
@@ -150,62 +163,25 @@ export class SwaggerConfig {
             tryItOutEnabled: true,
             tagsSorter: 'alpha',
             operationsSorter: 'alpha',
+            defaultModelsExpandDepth: 2,
+            defaultModelExpandDepth: 2,
+            displayOperationId: !isProduction,
         },
         customSiteTitle: 'Booking System API Documentation',
         customfavIcon: '/favicon.ico',
-        customJs: [
-            'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui-bundle.min.js',
-            'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui-standalone-preset.min.js',
-        ],
-        customCssUrl: [
-            'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.15.5/swagger-ui.min.css',
-        ],
+        customCss: `
+            .swagger-ui .topbar { display: none; }
+            .swagger-ui .info { margin: 20px 0; }
+            .swagger-ui .scheme-container { margin: 20px 0; }
+        `,
         });
-
-        console.log('📚 Swagger documentation available at: /api/docs');
     }
 
-    // Method to generate OpenAPI JSON
-    static generateOpenApiJson(app: INestApplication): any {
-        const config = new DocumentBuilder()
-        .setTitle('Time Slot Booking API')
-        .setDescription('API for booking time slots with user management')
-        .setVersion('1.0')
-        .build();
-
-        return SwaggerModule.createDocument(app, config);
+    // Method to check if Swagger should be enabled
+    static shouldEnable(): boolean {
+        const env = process.env.NODE_ENV || 'development';
+        const explicitlyEnabled = process.env.ENABLE_SWAGGER === 'true';
+        
+        return env === 'development' || explicitlyEnabled;
     }
-    }
-
-// Custom decorator for common API responses
-export const ApiCommonResponses = () => {
-    return () => {
-        // This would be implemented as a method decorator
-        // combining common Swagger decorators
-    };
-};
-
-// Swagger configuration for different environments
-export const swaggerEnvironmentConfig = {
-    development: {
-        enabled: true,
-        path: 'api/docs',
-        options: {
-        swaggerOptions: {
-            persistAuthorization: true,
-        },
-        },
-    },
-    production: {
-        enabled: process.env.ENABLE_SWAGGER === 'true',
-        path: 'docs',
-        options: {
-        swaggerOptions: {
-            persistAuthorization: false,
-        },
-        },
-    },
-    test: {
-        enabled: false,
-    },
-};
+}
